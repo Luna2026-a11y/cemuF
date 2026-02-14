@@ -240,18 +240,6 @@ bool ClassicController::set_default_mapping(const std::shared_ptr<ControllerBase
 		};
 		
 		break;
-	case InputAPI::Mouse:
-	{
-		// Mouse controller provides rotation values directly for right stick
-		mapping =
-		{
-			{kButtonId_AnalogR_Up, kRotationYN},
-			{kButtonId_AnalogR_Down, kRotationYP},
-			{kButtonId_AnalogR_Left, kRotationXN},
-			{kButtonId_AnalogR_Right, kRotationXP},
-		};
-		break;
-	}
 	}
 	}
 

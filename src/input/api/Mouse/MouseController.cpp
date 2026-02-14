@@ -22,7 +22,7 @@ std::string MouseController::get_button_name(uint64 button) const
 	return fmt::format("Mouse Button {}", button);
 }
 
-void MouseController::on_mouse_move(int32 deltaX, int32 deltaY)
+void MouseController::on_mouse_move(int32_t deltaX, int32_t deltaY)
 {
 	if (!s_capture_active.load())
 		return;

@@ -671,20 +671,6 @@ bool VPADController::set_default_mapping(const std::shared_ptr<ControllerBase>& 
 		
 		break;
 	}
-	case InputAPI::Mouse:
-	{
-		// Mouse controller provides rotation values directly for right stick (camera)
-		// No buttons, just the rotation axis
-		mapping =
-		{
-			// Mouse rotation maps to right stick for camera control
-			{kButtonId_StickR_Up, kRotationYN},
-			{kButtonId_StickR_Down, kRotationYP},
-			{kButtonId_StickR_Left, kRotationXN},
-			{kButtonId_StickR_Right, kRotationXP},
-		};
-		break;
-	}
 	}
 
 	bool mapping_updated = false;
