@@ -1,6 +1,7 @@
 #pragma once
 
 #include "input/api/ControllerProvider.h"
+#include "input/api/Controller.h"
 
 class MouseControllerProvider : public ControllerProviderBase
 {
