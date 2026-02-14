@@ -46,6 +46,7 @@
 #include "wxgui/input/InputSettings2.h"
 #include "wxgui/input/HotkeySettings.h"
 #include "input/InputManager.h"
+#include "input/api/Mouse/MouseController.h"
 
 #if BOOST_OS_WINDOWS
 #define exit(__c) ExitProcess(__c)
@@ -1387,6 +1388,17 @@ void MainWindow::OnMouseMove(wxMouseEvent& event)
 	event.Skip();
 
 	m_last_mouse_move_time = std::chrono::steady_clock::now();
+	
+	// Calculate mouse delta
+	wxPoint currentPos = event.GetPosition();
+	wxPoint delta = currentPos - m_last_mouse_position;
+	if (m_last_mouse_position.x != 0 || m_last_mouse_position.y != 0)
+	{
+		// Only send deltas if we've had at least one previous position
+		MouseController::on_mouse_move(delta.x, delta.y);
+	}
+	m_last_mouse_position = currentPos;
+	
 	m_mouse_position = wxGetMousePosition();
 	ShowCursor(true);
 
@@ -1732,6 +1744,9 @@ void MainWindow::OnMouseWheel(wxMouseEvent& event)
 	const float delta = event.GetWheelRotation(); // in 120 steps -> max reached ~480 (?)
 	auto& instance = InputManager::instance();
 	instance.m_mouse_wheel = (delta / 120.0f);
+	
+	// Also pass to MouseController for mapping to triggers
+	MouseController::on_mouse_wheel(delta / 120.0f);
 
 	event.Skip();
 }

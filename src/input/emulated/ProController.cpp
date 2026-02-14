@@ -255,6 +255,18 @@ bool ProController::set_default_mapping(const std::shared_ptr<ControllerBase>& c
 			{kButtonId_StickR_Right, kRotationXP},
 		};
 		break;
+	case InputAPI::Mouse:
+	{
+		// Mouse controller provides rotation values directly for right stick
+		mapping =
+		{
+			{kButtonId_StickR_Up, kRotationYN},
+			{kButtonId_StickR_Down, kRotationYP},
+			{kButtonId_StickR_Left, kRotationXN},
+			{kButtonId_StickR_Right, kRotationXP},
+		};
+		break;
+	}
 	}
 	}
 

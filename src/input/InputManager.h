@@ -16,6 +16,10 @@
 #include "input/api/DSU/DSUControllerProvider.h"
 #include "input/api/GameCube/GameCubeControllerProvider.h"
 
+#if HAS_KEYBOARD
+#include "input/api/Mouse/MouseControllerProvider.h"
+#endif
+
 #include "input/emulated/VPADController.h"
 #include "input/emulated/WPADController.h"
 

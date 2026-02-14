@@ -170,6 +170,7 @@ private:
 
 	wxTimer* m_timer;
 	wxPoint m_mouse_position{};
+	wxPoint m_last_mouse_position{}; // For calculating mouse delta
 	std::chrono::steady_clock::time_point m_last_mouse_move_time;
 	wxSize m_restored_size;
 	wxPoint m_restored_position;

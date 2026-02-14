@@ -27,6 +27,7 @@ InputManager::InputManager()
 	*/
 #if HAS_KEYBOARD
 	create_provider<KeyboardControllerProvider>();
+	create_provider<MouseControllerProvider>();
 #endif
 #if HAS_SDL
 	create_provider<SDLControllerProvider>();
