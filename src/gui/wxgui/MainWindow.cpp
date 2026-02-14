@@ -1383,22 +1383,65 @@ void MainWindow::SaveSettings()
 	g_wxConfig.Save();
 }
 
+void MainWindow::SetMouseCapture(bool capture)
+{
+	if (capture == m_mouse_captured)
+		return;
+
+	m_mouse_captured = capture;
+	MouseController::set_capture_active(capture);
+
+	if (capture && m_render_canvas)
+	{
+		// Hide cursor and warp to center of canvas
+		ShowCursor(false);
+		wxSize sz = m_render_canvas->GetSize();
+		wxPoint center(sz.GetWidth() / 2, sz.GetHeight() / 2);
+		m_render_canvas->WarpPointer(center.x, center.y);
+		m_last_mouse_position = center;
+	}
+	else
+	{
+		ShowCursor(true);
+	}
+}
+
+void MainWindow::OnMiddleClick(wxMouseEvent& event)
+{
+	event.Skip();
+	if (m_game_launched)
+		SetMouseCapture(!m_mouse_captured);
+}
+
 void MainWindow::OnMouseMove(wxMouseEvent& event)
 {
 	event.Skip();
 
 	m_last_mouse_move_time = std::chrono::steady_clock::now();
-	
-	// Calculate mouse delta
-	wxPoint currentPos = event.GetPosition();
-	wxPoint delta = currentPos - m_last_mouse_position;
-	if (m_last_mouse_position.x != 0 || m_last_mouse_position.y != 0)
+
+	if (m_mouse_captured && m_render_canvas)
 	{
-		// Only send deltas if we've had at least one previous position
-		MouseController::on_mouse_move(delta.x, delta.y);
+		// Calculate delta from center of canvas
+		wxSize sz = m_render_canvas->GetSize();
+		wxPoint center(sz.GetWidth() / 2, sz.GetHeight() / 2);
+		wxPoint currentPos = event.GetPosition();
+		int dx = currentPos.x - center.x;
+		int dy = currentPos.y - center.y;
+
+		if (dx != 0 || dy != 0)
+		{
+			MouseController::on_mouse_move(dx, dy);
+			// Warp cursor back to center
+			m_render_canvas->WarpPointer(center.x, center.y);
+			m_last_mouse_position = center;
+		}
+		return; // Don't process further when captured
 	}
+
+	// Normal (non-captured) mouse handling
+	wxPoint currentPos = event.GetPosition();
 	m_last_mouse_position = currentPos;
-	
+
 	m_mouse_position = wxGetMousePosition();
 	ShowCursor(true);
 
@@ -1419,6 +1462,14 @@ void MainWindow::OnMouseMove(wxMouseEvent& event)
 
 void MainWindow::OnMouseLeft(wxMouseEvent& event)
 {
+	// When mouse is captured, send button state to MouseController
+	if (m_mouse_captured)
+	{
+		MouseController::set_left_button(event.ButtonDown(wxMOUSE_BTN_LEFT));
+		event.Skip();
+		return;
+	}
+
 	auto& instance = InputManager::instance();
 
 	std::scoped_lock lock(instance.m_main_mouse.m_mutex);
@@ -1433,6 +1484,14 @@ void MainWindow::OnMouseLeft(wxMouseEvent& event)
 
 void MainWindow::OnMouseRight(wxMouseEvent& event)
 {
+	// When mouse is captured, send button state to MouseController
+	if (m_mouse_captured)
+	{
+		MouseController::set_right_button(event.ButtonDown(wxMOUSE_BTN_RIGHT));
+		event.Skip();
+		return;
+	}
+
 	auto& instance = InputManager::instance();
 
 	std::scoped_lock lock(instance.m_main_mouse.m_mutex);
@@ -1474,6 +1533,13 @@ void MainWindow::OnSetWindowTitle(wxCommandEvent& event)
 void MainWindow::OnKeyUp(wxKeyEvent& event)
 {
 	event.Skip();
+
+	// Escape releases mouse capture
+	if (event.GetKeyCode() == WXK_ESCAPE && m_mouse_captured)
+	{
+		SetMouseCapture(false);
+		return;
+	}
 
 	if (swkbd_hasKeyboardInputHook())
 		return;
@@ -1629,6 +1695,7 @@ void MainWindow::CreateCanvas()
 	m_render_canvas->Bind(wxEVT_LEFT_UP, &MainWindow::OnMouseLeft, this);
 	m_render_canvas->Bind(wxEVT_RIGHT_DOWN, &MainWindow::OnMouseRight, this);
 	m_render_canvas->Bind(wxEVT_RIGHT_UP, &MainWindow::OnMouseRight, this);
+	m_render_canvas->Bind(wxEVT_MIDDLE_DOWN, &MainWindow::OnMiddleClick, this);
 
 	m_render_canvas->Bind(wxEVT_GESTURE_PAN, &MainWindow::OnGesturePan, this);
 
@@ -1774,6 +1841,7 @@ void MainWindow::SetFullScreen(bool state)
 
 void MainWindow::EndEmulation() // unfinished - memory leaks and crashes after repeated use (after 3x usually)
 {
+	SetMouseCapture(false);
 	CafeSystem::ShutdownTitle();
 	DestroyCanvas();
 	m_game_launched = false;

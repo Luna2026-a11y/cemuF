@@ -31,7 +31,7 @@ public:
 	struct MouseSettings
 	{
 		float sensitivity = 1.0f;      // Mouse sensitivity multiplier
-		float deadzone = 0.05f;        // Minimum delta to register
+		float deadzone = 0.01f;        // Minimum delta to register
 		bool invertX = false;          // Invert X axis
 		bool invertY = false;          // Invert Y axis
 		bool use_raw_input = true;     // Use raw mouse input if available
@@ -52,6 +52,16 @@ public:
 	static void on_mouse_move(int32_t deltaX, int32_t deltaY);
 	static void on_mouse_wheel(float delta);
 
+	// Mouse button states (set from MainWindow when captured)
+	static void set_left_button(bool down) { s_left_button.store(down); }
+	static void set_right_button(bool down) { s_right_button.store(down); }
+	static bool is_left_button_down() { return s_left_button.load(); }
+	static bool is_right_button_down() { return s_right_button.load(); }
+
+	// Get current mouse state as right stick values (hardcoded, no mapping needed)
+	// Returns {x, y} in [-1, 1] range for direct injection into get_rotation()
+	static glm::vec2 get_current_rotation();
+
 protected:
 	ControllerState raw_state() override;
 
@@ -67,6 +77,8 @@ private:
 
 	static MouseSettings s_mouse_settings;
 	static std::atomic<bool> s_capture_active;
+	static std::atomic<bool> s_left_button;
+	static std::atomic<bool> s_right_button;
 	static uint32 s_toggle_key; // Key that toggles mouse capture
 
 	std::mutex m_delta_mutex;
@@ -79,6 +91,6 @@ private:
 	float m_smoothing_x = 0.0f;
 	float m_smoothing_y = 0.0f;
 
-	static constexpr float kMouseScale = 0.005f; // Scale factor for mouse to stick
-	static constexpr float kSmoothingFactor = 0.3f; // Lower = more smoothing
+	static constexpr float kMouseScale = 0.03f; // Scale factor for mouse to stick
+	static constexpr float kSmoothingFactor = 0.5f; // Lower = more smoothing
 };

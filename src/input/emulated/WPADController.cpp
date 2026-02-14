@@ -4,6 +4,7 @@
 #include "input/emulated/ClassicController.h"
 #include "input/emulated/ProController.h"
 #include "input/emulated/WiimoteController.h"
+#include "input/api/Mouse/MouseController.h"
 
 WPADController::WPADController(size_t player_index, WPADDataFormat data_format)
 	: EmulatedController(player_index), m_data_format(data_format)
@@ -77,6 +78,12 @@ void WPADController::WPADRead(WPADStatus_t* status)
 			button |= value;
 		}
 	}
+
+	// Hardcoded mouse buttons: left click = Y, right click = ZR
+	if (MouseController::is_left_button_down())
+		button |= get_emulated_button_flag(m_data_format, ProController::kButtonId_Y);
+	if (MouseController::is_right_button_down())
+		button |= get_emulated_button_flag(m_data_format, ProController::kButtonId_ZR);
 
 	m_homebutton_down |= is_home_down();
 

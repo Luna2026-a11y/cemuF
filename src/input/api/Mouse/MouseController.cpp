@@ -8,6 +8,8 @@ std::atomic<float> MouseController::s_delta_y{0.0f};
 std::atomic<float> MouseController::s_wheel_delta{0.0f};
 MouseController::MouseSettings MouseController::s_mouse_settings{};
 std::atomic<bool> MouseController::s_capture_active{false};
+std::atomic<bool> MouseController::s_left_button{false};
+std::atomic<bool> MouseController::s_right_button{false};
 uint32 MouseController::s_toggle_key = 0;
 
 MouseController::MouseController()
@@ -71,6 +73,33 @@ void MouseController::update_mouse_delta()
 	m_current_wheel = wheel * 0.1f;
 
 	m_last_update = std::chrono::high_resolution_clock::now();
+}
+
+glm::vec2 MouseController::get_current_rotation()
+{
+	if (!s_capture_active.load())
+		return {0.0f, 0.0f};
+
+	const float dx = s_delta_x.exchange(0.0f);
+	const float dy = s_delta_y.exchange(0.0f);
+
+	const auto& settings = s_mouse_settings;
+
+	float scale = settings.sensitivity * kMouseScale;
+
+	float rx = dx * scale;
+	float ry = dy * scale;
+
+	if (settings.invertX)
+		rx = -rx;
+	if (settings.invertY)
+		ry = -ry;
+
+	// Clamp to [-1, 1]
+	rx = std::max(-1.0f, std::min(1.0f, rx));
+	ry = std::max(-1.0f, std::min(1.0f, ry));
+
+	return {rx, ry};
 }
 
 ControllerState MouseController::raw_state()

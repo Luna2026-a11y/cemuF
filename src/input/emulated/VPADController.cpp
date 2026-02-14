@@ -1,6 +1,7 @@
 #include "input/emulated/VPADController.h"
 #include "input/api/Controller.h"
 #include "input/api/SDL/SDLController.h"
+#include "input/api/Mouse/MouseController.h"
 #include "WindowSystem.h"
 #include "input/InputManager.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
@@ -72,6 +73,12 @@ void VPADController::VPADRead(VPADStatus_t& status, const BtnRepeat& repeat)
 			status.hold |= value;
 		}
 	}
+
+	// Hardcoded mouse buttons: left click = Y, right click = ZR
+	if (MouseController::is_left_button_down())
+		status.hold |= VPAD_Y;
+	if (MouseController::is_right_button_down())
+		status.hold |= VPAD_ZR;
 
 	m_homebutton_down |= is_home_down();
 
@@ -495,6 +502,12 @@ glm::vec2 VPADController::get_rotation() const
 	glm::vec2 result;
 	result.x = (left > right) ? -left : right;
 	result.y = (up > down) ? up : -down;
+
+	// Inject mouse directly into right stick (hardcoded mouse camera control)
+	const auto mouse = MouseController::get_current_rotation();
+	result.x += mouse.x;
+	result.y -= mouse.y; // invert Y: mouse down = stick down (negative)
+
 	return length(result) > 1.0f ? normalize(result) : result;
 }
 
@@ -631,6 +644,17 @@ bool VPADController::set_default_mapping(const std::shared_ptr<ControllerBase>& 
 				{kButtonId_StickR_Right, kRotationXP},
 			};
 		}
+		break;
+	}
+	case InputAPI::Mouse:
+	{
+		mapping =
+		{
+			{kButtonId_StickR_Up, kRotationYP},
+			{kButtonId_StickR_Down, kRotationYN},
+			{kButtonId_StickR_Left, kRotationXN},
+			{kButtonId_StickR_Right, kRotationXP},
+		};
 		break;
 	}
 	case InputAPI::XInput:

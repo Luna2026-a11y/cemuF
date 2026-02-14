@@ -32,6 +32,31 @@ The native macOS build is currently purely experimental and should not be consid
 
 Pre-2.0 releases can be found on Cemu's [changelog page](https://cemu.info/changelog.html).
 
+## Mouse & Keyboard Support (Experimental)
+
+This fork adds native mouse support for camera control, allowing keyboard+mouse gameplay.
+
+### Current Features
+- **Mouse camera control**: Mouse movement is mapped to the right analog stick (camera)
+- **Mouse button mapping**: Left click = Y button, Right click = ZR button
+- **Mouse capture**: Middle click to toggle mouse capture (cursor locked + hidden), Escape to release
+
+### How to Use
+1. Launch a game in Cemu
+2. **Middle-click** on the game window to capture the mouse
+3. Move the mouse to control the camera (right stick)
+4. Left click = Y, Right click = ZR
+5. Press **Escape** to release the mouse cursor
+
+### TODO
+- [ ] Keyboard mapping (WASD/ZQSD for left stick + action buttons)
+- [ ] UI settings panel for mouse sensitivity, deadzone, axis inversion
+- [ ] Configurable mouse/keyboard button mappings (instead of hardcoded)
+- [ ] Windows Raw Input for smoother mouse deltas
+
+### Build Note (Windows)
+If you have multiple Visual Studio versions installed, make sure to use the correct CMake generator matching your vcpkg compiler. For VS 2026: `-G "Visual Studio 18 2026"`.
+
 ## Build Instructions
 
 To compile Cemu yourself on Windows, Linux or macOS, view [BUILD.md](/BUILD.md).

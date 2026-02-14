@@ -172,6 +172,9 @@ private:
 	wxPoint m_mouse_position{};
 	wxPoint m_last_mouse_position{}; // For calculating mouse delta
 	std::chrono::steady_clock::time_point m_last_mouse_move_time;
+	bool m_mouse_captured = false; // Mouse captured for camera control
+	void SetMouseCapture(bool capture);
+	void OnMiddleClick(wxMouseEvent& event);
 	wxSize m_restored_size;
 	wxPoint m_restored_position;
 

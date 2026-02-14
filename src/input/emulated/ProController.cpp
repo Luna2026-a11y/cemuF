@@ -2,6 +2,7 @@
 
 #include "input/api/Controller.h"
 #include "input/api/SDL/SDLController.h"
+#include "input/api/Mouse/MouseController.h"
 
 ProController::ProController(size_t player_index)
 	: WPADController(player_index, kDataFormat_URCC)
@@ -120,7 +121,13 @@ glm::vec2 ProController::get_rotation() const
 	glm::vec2 result;
 	result.x = (left > right) ? -left : right;
 	result.y = (up > down) ? up : -down;
-	return result;
+
+	// Inject mouse directly into right stick (hardcoded mouse camera control)
+	const auto mouse = MouseController::get_current_rotation();
+	result.x += mouse.x;
+	result.y -= mouse.y;
+
+	return length(result) > 1.0f ? normalize(result) : result;
 }
 
 glm::vec2 ProController::get_trigger() const
@@ -217,6 +224,17 @@ bool ProController::set_default_mapping(const std::shared_ptr<ControllerBase>& c
 				{kButtonId_StickR_Right, kRotationXP},
 			};
 		}
+		break;
+	}
+	case InputAPI::Mouse:
+	{
+		mapping =
+		{
+			{kButtonId_StickR_Up, kRotationYP},
+			{kButtonId_StickR_Down, kRotationYN},
+			{kButtonId_StickR_Left, kRotationXN},
+			{kButtonId_StickR_Right, kRotationXP},
+		};
 		break;
 	}
 	case InputAPI::XInput:
