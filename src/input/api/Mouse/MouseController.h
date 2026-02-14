@@ -15,8 +15,7 @@ public:
 
 	std::string_view api_name() const override
 	{
-		static_assert(to_string(InputAPI::Mouse) == "Mouse");
-		return to_string(InputAPI::Mouse);
+		return "Mouse";
 	}
 	InputAPI::Type api() const override { return InputAPI::Mouse; }
 

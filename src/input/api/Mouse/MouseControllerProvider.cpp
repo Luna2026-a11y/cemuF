@@ -6,7 +6,7 @@ MouseControllerProvider::MouseControllerProvider()
 	m_init = true;
 }
 
-std::vector<ControllerPtr> MouseControllerProvider::get_controllers()
+std::vector<std::shared_ptr<ControllerBase>> MouseControllerProvider::get_controllers()
 {
 	// Mouse is always available (if window has focus)
 	return { std::make_shared<MouseController>() };
