@@ -1,6 +1,5 @@
 #include "input/api/JoyCon/JoyConController.h"
 
-#include <cmath>
 #include <thread>
 #include <chrono>
 
@@ -98,67 +97,13 @@ void JoyConController::request_recalibration()
 {
 	{
 		std::lock_guard lock(m_motion_mutex);
-		// Reset all calibration accumulators
 		m_calib_sum_gx = m_calib_sum_gy = m_calib_sum_gz = 0.0f;
-		m_calib_sum_ax = m_calib_sum_ay = m_calib_sum_az = 0.0f;
-		// Reset reference to identity (will be recomputed when calibration finishes)
-		m_ref_q = {1.0f, 0.0f, 0.0f, 0.0f};
-		// Reset Mahony filter so orientation starts fresh
 		m_motion_handler = WiiUMotionHandler{};
 		m_last_sample    = MotionSample{};
 		m_last_imu_time  = {};
 	}
 	m_calib_remaining.store(kCalibSamples);
-	cemuLog_log(LogType::Force, "JoyCon: recalibration requested — hold still in desired neutral position");
-}
-
-// ---------------------------------------------------------------------------
-// Math helpers
-// ---------------------------------------------------------------------------
-
-// Rotate vector (vx,vy,vz) by unit quaternion q = {w, x, y, z}
-// Rodrigues: v' = v + 2w*(q_xyz×v) + 2*(q_xyz×(q_xyz×v))
-void JoyConController::rotate_by_quat(const std::array<float,4>& q,
-                                       float vx, float vy, float vz,
-                                       float& rx, float& ry, float& rz)
-{
-	const float w = q[0], qx = q[1], qy = q[2], qz = q[3];
-
-	// t = 2 * cross(q_xyz, v)
-	const float tx = 2.0f * (qy * vz - qz * vy);
-	const float ty = 2.0f * (qz * vx - qx * vz);
-	const float tz = 2.0f * (qx * vy - qy * vx);
-
-	// v' = v + w*t + cross(q_xyz, t)
-	rx = vx + w * tx + qy * tz - qz * ty;
-	ry = vy + w * ty + qz * tx - qx * tz;
-	rz = vz + w * tz + qx * ty - qy * tx;
-}
-
-// Compute quaternion that rotates unit vector (fx,fy,fz) → (tx,ty,tz)
-std::array<float,4> JoyConController::quat_from_to(float fx, float fy, float fz,
-                                                     float tx, float ty, float tz)
-{
-	// cross product = rotation axis (unnormalized), dot = cos(angle)
-	float ax = fy * tz - fz * ty;
-	float ay = fz * tx - fx * tz;
-	float az = fx * ty - fy * tx;
-	float dot = fx * tx + fy * ty + fz * tz;
-	float sin_half = std::sqrt(std::max(0.0f, (1.0f - dot) * 0.5f));
-	float cos_half = std::sqrt(std::max(0.0f, (1.0f + dot) * 0.5f));
-
-	float axis_len = std::sqrt(ax * ax + ay * ay + az * az);
-	if (axis_len < 1e-6f)
-	{
-		// Vectors are parallel (or anti-parallel)
-		if (dot > 0.0f)
-			return {1.0f, 0.0f, 0.0f, 0.0f}; // identity
-		else
-			return {0.0f, 1.0f, 0.0f, 0.0f}; // 180° around X
-	}
-
-	float s = sin_half / axis_len;
-	return {cos_half, ax * s, ay * s, az * s};
+	cemuLog_log(LogType::Force, "JoyCon: recalibration requested — hold still ~1 sec");
 }
 
 // ---------------------------------------------------------------------------
@@ -262,54 +207,33 @@ void JoyConController::parse_imu(const uint8_t* report, size_t len)
 		const float raw_ay = r16(imu + 2)  * ACC_G_PER_UNIT;
 		const float raw_az = r16(imu + 4)  * ACC_G_PER_UNIT;
 
-		// --- Calibration phase: accumulate samples ---
+		// --- Calibration phase: accumulate gyro samples to estimate bias ---
 		const int remaining = m_calib_remaining.load();
 		if (remaining > 0)
 		{
-			// Accumulate raw gyro for bias estimation
 			m_calib_sum_gx += raw_gx;
 			m_calib_sum_gy += raw_gy;
 			m_calib_sum_gz += raw_gz;
-
-			// Accumulate mapped accel for reference quaternion
-			// Mapping: (ax, az, ay) → Mahony frame (same as normal operation below)
-			m_calib_sum_ax += raw_ax;
-			m_calib_sum_ay += raw_az; // note: az→ay in Mahony frame
-			m_calib_sum_az += raw_ay; // note: ay→az in Mahony frame
 
 			const int new_rem = remaining - 1;
 			m_calib_remaining.store(new_rem);
 
 			if (new_rem == 0)
 			{
-				// --- Gyro bias ---
 				m_bias_gx = m_calib_sum_gx / kCalibSamples;
 				m_bias_gy = m_calib_sum_gy / kCalibSamples;
 				m_bias_gz = m_calib_sum_gz / kCalibSamples;
 
-				// --- Reference quaternion from gravity direction ---
-				// Average mapped accel = gravity direction in the Mahony frame
-				// for the current physical Joy-Con position.
-				// We compute the quaternion that rotates this direction to (0,0,1)
-				// so the Mahony filter treats the calibration position as "neutral".
-				float gx = m_calib_sum_ax / kCalibSamples;
-				float gy = m_calib_sum_ay / kCalibSamples;
-				float gz = m_calib_sum_az / kCalibSamples;
-				const float glen = std::sqrt(gx*gx + gy*gy + gz*gz);
-				if (glen > 0.01f) { gx /= glen; gy /= glen; gz /= glen; }
-
+				// Reset the Mahony filter so it re-converges from the current
+				// physical orientation (gravity direction is re-detected automatically).
 				std::lock_guard lock(m_motion_mutex);
-				m_ref_q = quat_from_to(gx, gy, gz, 0.0f, 0.0f, 1.0f);
-
-				// Reset the Mahony filter so it converges from the new reference
 				m_motion_handler = WiiUMotionHandler{};
 				m_last_imu_time  = {};
 
 				cemuLog_log(LogType::Force,
 					"JoyCon: calibration done. "
-					"Bias=({:.4f},{:.4f},{:.4f}) rad/s  "
-					"GravDir=({:.3f},{:.3f},{:.3f})",
-					m_bias_gx, m_bias_gy, m_bias_gz, gx, gy, gz);
+					"Bias=({:.4f},{:.4f},{:.4f}) rad/s",
+					m_bias_gx, m_bias_gy, m_bias_gz);
 			}
 			continue; // Don't feed motion data during calibration
 		}
@@ -321,24 +245,24 @@ void JoyConController::parse_imu(const uint8_t* report, size_t len)
 		const float gy_c = raw_gy - m_bias_gy;
 		const float gz_c = raw_gz - m_bias_gz;
 
-		// 2. Apply Joy-Con axis mapping for Right Joy-Con held in portrait
-		//    (joystick at top, SL/SR on sides)
-		//    Joy-Con X → pitch,  Joy-Con Z → yaw,  Joy-Con Y → roll
-		float mg_x = gx_c, mg_y = gz_c, mg_z = gy_c; // gyro: pitch/yaw/roll
-		float ma_x = raw_ax, ma_y = raw_az, ma_z = raw_ay; // accel
+		// 2. Axis mapping for Right Joy-Con held portrait (joystick at top).
+		//    Gyro: identity mapping so physical yaw→game yaw, pitch→pitch, roll→roll.
+		//    Accel: swap Joy-Con Y↔Z so that the vertical axis (raw_ay ≈ ±1 G when
+		//    held upright) ends up in Mahony's Z slot, where the filter expects gravity.
+		const float mg_x = gx_c;   // Joy-Con X rotation  → pitch
+		const float mg_y = gy_c;   // Joy-Con Y rotation  → yaw  (NOT gz!)
+		const float mg_z = gz_c;   // Joy-Con Z rotation  → roll
 
-		// 3. Apply reference quaternion so calibration position = neutral
-		float rg_x, rg_y, rg_z;
-		float ra_x, ra_y, ra_z;
+		const float ma_x = raw_ax;
+		const float ma_y = raw_az; // Joy-Con Z accel → Mahony Y
+		const float ma_z = raw_ay; // Joy-Con Y accel → Mahony Z (gravity slot)
+
+		// 3. Feed into Mahony filter (sub_dt already computed above)
 		{
 			std::lock_guard lock(m_motion_mutex);
-			rotate_by_quat(m_ref_q, mg_x, mg_y, mg_z, rg_x, rg_y, rg_z);
-			rotate_by_quat(m_ref_q, ma_x, ma_y, ma_z, ra_x, ra_y, ra_z);
-
-			// 4. Feed into Mahony filter (sub_dt already computed above)
 			m_motion_handler.processMotionSample(sub_dt,
-				rg_x, rg_y, rg_z,   // gyro:  pitch, yaw, roll (rad/s)
-				ra_x, ra_y, ra_z);   // accel: x, y, z (g)
+				mg_x, mg_y, mg_z,   // gyro:  pitch, yaw, roll (rad/s)
+				ma_x, ma_y, ma_z);  // accel: x, y, z (g)
 
 			m_last_sample = m_motion_handler.getMotionSample();
 		}
