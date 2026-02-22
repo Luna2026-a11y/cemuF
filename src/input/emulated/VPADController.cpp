@@ -467,10 +467,14 @@ glm::vec2 VPADController::get_rotation() const
 	result.x = (left > right) ? -left : right;
 	result.y = (up > down) ? up : -down;
 
-	// Inject mouse directly into right stick (hardcoded mouse camera control)
-	const auto mouse = MouseController::get_current_rotation();
-	result.x += mouse.x;
-	result.y -= mouse.y; // invert Y: mouse down = stick down (negative)
+	// Inject mouse into right stick — but only when gyro is NOT active.
+	// In gyro mode the mouse feeds the gyroscope exclusively (no double movement).
+	if (!MouseController::is_gyro_on())
+	{
+		const auto mouse = MouseController::get_current_rotation();
+		result.x += mouse.x;
+		result.y -= mouse.y; // invert Y: mouse down = stick down (negative)
+	}
 
 	return length(result) > 1.0f ? normalize(result) : result;
 }

@@ -60,11 +60,16 @@ public:
 	static GyroSettings& get_gyro_settings() { return s_gyro_settings; }
 	static void set_gyro_settings(const GyroSettings& settings) { s_gyro_settings = settings; }
 
-	// Returns true if gyro simulation should be active this frame (handles all 3 modes)
+	// Returns true if gyro simulation should be active this frame (handles all 3 modes).
+	// Has side effects (Toggle edge detection) — call once per frame from update_motion().
 	static bool is_gyro_active();
 
-	// Returns the current MotionSample built from accumulated mouse deltas
-	// Must be called once per frame from the emulation thread
+	// Side-effect-free read of the last result of is_gyro_active().
+	// Safe to call from get_rotation() without disturbing Toggle state.
+	static bool is_gyro_on() { return s_gyro_active_cache.load(); }
+
+	// Returns the current MotionSample built from accumulated mouse deltas.
+	// Must be called once per frame from the emulation thread.
 	static MotionSample get_gyro_sample();
 
 	// Toggle mouse capture (when true, mouse is captured and controls right stick)
@@ -116,6 +121,7 @@ private:
 	// Gyro state (all accessed only from emulation thread except the deltas)
 	static GyroSettings s_gyro_settings;
 	static std::atomic<bool> s_gyro_enabled;       // Current on/off state for Toggle mode
+	static std::atomic<bool> s_gyro_active_cache;  // Last result of is_gyro_active(), for is_gyro_on()
 	static bool s_gyro_prev_key_down;              // Previous key state for Toggle edge detection
 	static std::atomic<float> s_gyro_delta_x;      // Accumulated mouse X delta for gyro (separate from stick)
 	static std::atomic<float> s_gyro_delta_y;      // Accumulated mouse Y delta for gyro

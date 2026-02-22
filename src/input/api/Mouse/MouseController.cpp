@@ -17,6 +17,7 @@ std::atomic<float> MouseController::s_wheel_axis{0.0f};
 // Static members — gyro simulation
 MouseController::GyroSettings MouseController::s_gyro_settings{};
 std::atomic<bool> MouseController::s_gyro_enabled{false};
+std::atomic<bool> MouseController::s_gyro_active_cache{false};
 bool MouseController::s_gyro_prev_key_down = false;
 std::atomic<float> MouseController::s_gyro_delta_x{0.0f};
 std::atomic<float> MouseController::s_gyro_delta_y{0.0f};
@@ -141,33 +142,39 @@ float MouseController::get_wheel_axis()
 
 bool MouseController::is_gyro_active()
 {
-	if (!s_capture_active.load())
-		return false;
+	bool result = false;
 
-	const auto& gs = s_gyro_settings;
-
-	switch (gs.mode)
+	if (s_capture_active.load())
 	{
-	case GyroMode::Always:
-		return true;
+		const auto& gs = s_gyro_settings;
 
-	case GyroMode::Toggle:
-		if (gs.key != 0)
+		switch (gs.mode)
 		{
-			const bool pressed = WindowSystem::IsKeyDown(gs.key);
-			const bool prev    = s_gyro_prev_key_down;
-			s_gyro_prev_key_down = pressed;
-			if (pressed && !prev) // rising edge → toggle
-				s_gyro_enabled = !s_gyro_enabled.load();
-		}
-		return s_gyro_enabled.load();
+		case GyroMode::Always:
+			result = true;
+			break;
 
-	case GyroMode::Hold:
-		if (gs.key != 0)
-			return WindowSystem::IsKeyDown(gs.key);
-		return false;
+		case GyroMode::Toggle:
+			if (gs.key != 0)
+			{
+				const bool pressed = WindowSystem::IsKeyDown(gs.key);
+				const bool prev    = s_gyro_prev_key_down;
+				s_gyro_prev_key_down = pressed;
+				if (pressed && !prev) // rising edge → toggle
+					s_gyro_enabled = !s_gyro_enabled.load();
+			}
+			result = s_gyro_enabled.load();
+			break;
+
+		case GyroMode::Hold:
+			result = (gs.key != 0) && WindowSystem::IsKeyDown(gs.key);
+			break;
+		}
 	}
-	return false;
+
+	// Cache pour is_gyro_on() (lecture sans effet de bord depuis get_rotation)
+	s_gyro_active_cache.store(result);
+	return result;
 }
 
 MotionSample MouseController::get_gyro_sample()
