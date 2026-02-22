@@ -14,6 +14,10 @@
 #include "wxgui/components/wxInputDraw.h"
 #include "wxgui/input/InputAPIAddWindow.h"
 
+#if BOOST_OS_WINDOWS
+#include <windows.h>
+#endif
+
 
 DefaultControllerSettings::DefaultControllerSettings(wxWindow* parent, const wxPoint& position, std::shared_ptr<ControllerBase> controller)
 	: wxDialog(parent, wxID_ANY, _("Controller settings"), position, wxDefaultSize,
@@ -52,6 +56,54 @@ DefaultControllerSettings::DefaultControllerSettings(wxWindow* parent, const wxP
 		box_sizer->Add(rumbleSizer);
 
 		sizer->Add(box_sizer, 1, wxALL|wxEXPAND, 5);
+	}
+
+	// Mouse Gyro section (visible only when the physical controller is a Mouse)
+	if (m_controller->api() == InputAPI::Mouse)
+	{
+		const auto& gs = MouseController::get_gyro_settings();
+		m_gyro_key_code = gs.key;
+
+		auto* box = new wxStaticBox(this, wxID_ANY, _("Mouse Gyro"));
+		auto* box_sizer = new wxStaticBoxSizer(box, wxVERTICAL);
+		auto* grid = new wxFlexGridSizer(0, 3, 5, 5);
+		grid->AddGrowableCol(1);
+
+		// --- Mode ---
+		grid->Add(new wxStaticText(box, wxID_ANY, _("Mode")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		wxArrayString modes;
+		modes.Add(_("Always (with capture)"));
+		modes.Add(_("Toggle (press key)"));
+		modes.Add(_("Hold (hold key)"));
+		m_gyro_mode = new wxChoice(box, wxID_ANY, wxDefaultPosition, wxDefaultSize, modes);
+		m_gyro_mode->SetSelection((int)gs.mode);
+		m_gyro_mode->Bind(wxEVT_CHOICE, &DefaultControllerSettings::on_gyro_mode_change, this);
+		grid->Add(m_gyro_mode, 1, wxEXPAND | wxALL, 5);
+		grid->AddSpacer(0);
+
+		// --- Key ---
+		grid->Add(new wxStaticText(box, wxID_ANY, _("Key")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_gyro_key_text = new wxTextCtrl(box, wxID_ANY, gyro_key_name(gs.key),
+		                                  wxDefaultPosition, wxDefaultSize, wxTE_READONLY | wxTE_CENTRE);
+		m_gyro_key_text->SetToolTip(_("Click here then press any key to bind"));
+		m_gyro_key_text->Bind(wxEVT_KEY_DOWN, &DefaultControllerSettings::on_gyro_key_press, this);
+		m_gyro_key_text->Enable(gs.mode != MouseController::GyroMode::Always);
+		grid->Add(m_gyro_key_text, 1, wxEXPAND | wxALL, 5);
+		grid->AddSpacer(0);
+
+		// --- Sensitivity ---
+		const int sens = (int)(gs.sensitivity * 100.0f);
+		grid->Add(new wxStaticText(box, wxID_ANY, _("Sensitivity")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_gyro_sensitivity = new wxSlider(box, wxID_ANY, sens, 10, 300);
+		auto* sens_text = new wxStaticText(box, wxID_ANY, wxString::Format("%d%%", sens));
+		m_gyro_sensitivity->Bind(wxEVT_SLIDER, [sens_text](wxCommandEvent& e) {
+			sens_text->SetLabel(wxString::Format("%d%%", e.GetInt()));
+		});
+		grid->Add(m_gyro_sensitivity, 1, wxEXPAND | wxALL, 5);
+		grid->Add(sens_text, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+		box_sizer->Add(grid, 1, wxEXPAND, 0);
+		sizer->Add(box_sizer, 0, wxALL | wxEXPAND, 5);
 	}
 
 	auto* row_sizer = new wxBoxSizer(wxHORIZONTAL);
@@ -227,10 +279,61 @@ DefaultControllerSettings::~DefaultControllerSettings()
 
 void DefaultControllerSettings::update_settings()
 {
-	// update settings
 	m_controller->set_settings(m_settings);
 	if (m_use_motion)
 		m_controller->set_use_motion(m_use_motion->GetValue());
+
+	// Save mouse gyro settings
+	if (m_controller->api() == InputAPI::Mouse && m_gyro_mode)
+	{
+		MouseController::GyroSettings gs;
+		gs.mode        = (MouseController::GyroMode)m_gyro_mode->GetSelection();
+		gs.key         = m_gyro_key_code;
+		gs.sensitivity = (float)m_gyro_sensitivity->GetValue() / 100.0f;
+		MouseController::set_gyro_settings(gs);
+	}
+}
+
+// Returns a human-readable name for a Windows VK code
+wxString DefaultControllerSettings::gyro_key_name(uint32 vk)
+{
+	if (vk == 0)
+		return _("None");
+#if BOOST_OS_WINDOWS
+	const UINT scanCode = MapVirtualKey(vk, MAPVK_VK_TO_VSC);
+	wchar_t buf[256] = {};
+	if (GetKeyNameTextW((LONG)(scanCode << 16), buf, 256) > 0)
+		return wxString(buf);
+#endif
+	return wxString::Format("0x%02X", vk);
+}
+
+void DefaultControllerSettings::on_gyro_mode_change(wxCommandEvent& event)
+{
+	const auto mode = (MouseController::GyroMode)event.GetInt();
+	// Key field only makes sense for Toggle and Hold modes
+	if (m_gyro_key_text)
+		m_gyro_key_text->Enable(mode != MouseController::GyroMode::Always);
+}
+
+void DefaultControllerSettings::on_gyro_key_press(wxKeyEvent& event)
+{
+#if BOOST_OS_WINDOWS
+	const uint32 vk = (uint32)event.GetRawKeyCode();
+	if (vk == VK_ESCAPE)
+	{
+		// Escape clears the binding
+		m_gyro_key_code = 0;
+		m_gyro_key_text->SetValue(_("None"));
+	}
+	else if (vk != 0)
+	{
+		m_gyro_key_code = vk;
+		m_gyro_key_text->SetValue(gyro_key_name(vk));
+	}
+#else
+	event.Skip();
+#endif
 }
 
 void DefaultControllerSettings::on_timer(wxTimerEvent& event)
