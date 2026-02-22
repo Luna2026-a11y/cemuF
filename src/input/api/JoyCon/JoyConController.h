@@ -33,6 +33,12 @@ public:
 	std::string get_button_name(uint64 button) const override;
 	MotionSample get_motion_sample() override;
 
+	// Calibration: sample N frames of still gyro data to estimate the bias offset.
+	// Call this while holding the Joy-Con still.
+	// Also resets the Mahony filter so the orientation starts fresh.
+	void request_recalibration();
+	bool is_calibrating() const { return m_calib_remaining > 0; }
+
 protected:
 	ControllerState raw_state() override;
 
@@ -56,6 +62,15 @@ private:
 	WiiUMotionHandler    m_motion_handler;
 	MotionSample         m_last_sample;
 	std::chrono::high_resolution_clock::time_point m_last_imu_time{};
+
+	// Gyro bias calibration
+	// We sample kCalibSamples raw sub-frames while the controller is still,
+	// then subtract the mean from all subsequent readings.
+	// calibration is triggered automatically on first connect and on request.
+	static constexpr int kCalibSamples = 180; // ~1 second at 180 sub-frames/sec
+	std::atomic<int> m_calib_remaining{kCalibSamples}; // counts down to 0
+	float m_calib_sum_gx = 0, m_calib_sum_gy = 0, m_calib_sum_gz = 0;
+	float m_bias_gx = 0, m_bias_gy = 0, m_bias_gz = 0;
 
 	// Nintendo Vendor ID + Joy-Con Product IDs
 	static constexpr uint16_t VENDOR_ID  = 0x057E;

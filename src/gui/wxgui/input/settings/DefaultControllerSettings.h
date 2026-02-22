@@ -10,6 +10,7 @@
 #include "input/api/Mouse/MouseController.h"
 
 class wxCheckBox;
+class wxStaticText;
 class wxInputDraw;
 
 class DefaultControllerSettings : public wxDialog
@@ -41,6 +42,9 @@ private:
 	wxTextCtrl* m_gyro_key_text    = nullptr;
 	wxSlider*   m_gyro_sensitivity = nullptr;
 	uint32      m_gyro_key_code    = 0; // Windows VK code
+
+	// Joy-Con gyro settings (visible only when controller api == JoyCon)
+	wxStaticText* m_joycon_calib_status = nullptr;
 
 	wxInputDraw* m_axis_draw, * m_rotation_draw, *m_trigger_draw;
 

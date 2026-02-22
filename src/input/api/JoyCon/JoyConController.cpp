@@ -54,7 +54,7 @@ bool JoyConController::open_device()
 	hid_set_nonblocking(m_handle, 1);
 
 	m_connected.store(true);
-	cemuLog_log(LogType::Force, "JoyCon: connected {}",
+	cemuLog_log(LogType::Force, "JoyCon: connected {} — calibrating gyro bias for ~1 second (hold still)",
 		m_side == Side::Left ? "Left Joy-Con" : "Right Joy-Con");
 	return true;
 }
@@ -88,12 +88,27 @@ bool JoyConController::send_subcommand(uint8_t subcmd, const std::vector<uint8_t
 	return hid_write(m_handle, buf.data(), buf.size()) >= 0;
 }
 
+void JoyConController::request_recalibration()
+{
+	// Reset bias accumulators, then let parse_imu count down kCalibSamples frames.
+	// Also reset the Mahony filter so the orientation starts fresh from neutral.
+	{
+		std::lock_guard lock(m_motion_mutex);
+		m_calib_sum_gx = m_calib_sum_gy = m_calib_sum_gz = 0.0f;
+		m_motion_handler = WiiUMotionHandler{};
+		m_last_sample    = MotionSample{};
+		m_last_imu_time  = {};
+	}
+	m_calib_remaining.store(kCalibSamples);
+	cemuLog_log(LogType::Force, "JoyCon: recalibration requested — hold still for ~1 second");
+}
+
 void JoyConController::read_thread_func()
 {
 	constexpr int kBufSize = 64;
 	uint8_t buf[kBufSize];
 	bool logged_first = false;
-	int report_count = 0;
+	int report_count  = 0;
 
 	while (m_thread_running.load())
 	{
@@ -146,51 +161,82 @@ void JoyConController::parse_imu(const uint8_t* report, size_t len)
 
 	const auto now = std::chrono::high_resolution_clock::now();
 
-	// First call: just initialise the clock
-	if (m_last_imu_time == std::chrono::high_resolution_clock::time_point{})
-	{
-		m_last_imu_time = now;
-		return;
-	}
+	// Helper: read little-endian int16_t
+	auto r16 = [](const uint8_t* p) -> int16_t {
+		return static_cast<int16_t>(p[0] | (static_cast<uint16_t>(p[1]) << 8));
+	};
 
-	float dt = std::chrono::duration<float>(now - m_last_imu_time).count();
-	dt = std::min(dt, 0.1f); // clamp to avoid huge jumps after a pause
-	m_last_imu_time = now;
-
-	// Joy-Con sends 3 IMU samples per 0x30 report (oldest → newest).
-	// We process all three and accumulate into the Mahony filter.
-	// IMU data starts at byte 13 (after header: 1 report_id + 12 bytes frame info).
+	// Process all 3 IMU sub-samples contained in each 0x30 report.
+	// IMU data starts at byte 13 (header: 1 report_id + 12 bytes frame info).
 	for (int s = 0; s < 3; ++s)
 	{
 		const uint8_t* imu = report + 13 + s * 12;
 
-		// Helper: read little-endian int16_t
-		auto r16 = [](const uint8_t* p) -> int16_t {
-			return static_cast<int16_t>(p[0] | (static_cast<uint16_t>(p[1]) << 8));
-		};
+		// Raw values
+		const float raw_gx = r16(imu + 6)  * GYRO_RAD_PER_UNIT;
+		const float raw_gy = r16(imu + 8)  * GYRO_RAD_PER_UNIT;
+		const float raw_gz = r16(imu + 10) * GYRO_RAD_PER_UNIT;
 
-		// Raw accelerometer values (in units of ACC_G_PER_UNIT G)
+		// --- Calibration phase: accumulate samples to estimate static bias ---
+		const int remaining = m_calib_remaining.load();
+		if (remaining > 0)
+		{
+			m_calib_sum_gx += raw_gx;
+			m_calib_sum_gy += raw_gy;
+			m_calib_sum_gz += raw_gz;
+
+			const int new_remaining = remaining - 1;
+			m_calib_remaining.store(new_remaining);
+
+			if (new_remaining == 0)
+			{
+				// Calibration done: compute bias as mean
+				m_bias_gx = m_calib_sum_gx / kCalibSamples;
+				m_bias_gy = m_calib_sum_gy / kCalibSamples;
+				m_bias_gz = m_calib_sum_gz / kCalibSamples;
+				cemuLog_log(LogType::Force,
+					"JoyCon: calibration done. Bias = ({:.5f}, {:.5f}, {:.5f}) rad/s",
+					m_bias_gx, m_bias_gy, m_bias_gz);
+			}
+			// Don't feed motion data during calibration
+			continue;
+		}
+
+		// --- Normal operation: subtract bias, feed into Mahony filter ---
+
+		// Bias-corrected gyro (rad/s)
+		const float gx_c = raw_gx - m_bias_gx;
+		const float gy_c = raw_gy - m_bias_gy;
+		const float gz_c = raw_gz - m_bias_gz;
+
+		// Accelerometer (g)
 		const float ax = r16(imu + 0) * ACC_G_PER_UNIT;
 		const float ay = r16(imu + 2) * ACC_G_PER_UNIT;
 		const float az = r16(imu + 4) * ACC_G_PER_UNIT;
 
-		// Raw gyroscope values (in rad/s)
-		// Right Joy-Con held vertically (joystick up):
-		//   gyro_x → pitch (tilt up/down)
-		//   gyro_y → roll
-		//   gyro_z → yaw (rotate left/right)
-		// We map: gx=pitch, gy=yaw, gz=roll to match WiiUMotionHandler convention.
-		const float raw_gx = r16(imu + 6) * GYRO_RAD_PER_UNIT;
-		const float raw_gy = r16(imu + 8) * GYRO_RAD_PER_UNIT;
-		const float raw_gz = r16(imu + 10) * GYRO_RAD_PER_UNIT;
+		// Compute deltaTime from wall clock (shared across 3 sub-samples)
+		float sub_dt;
+		if (m_last_imu_time == std::chrono::high_resolution_clock::time_point{})
+		{
+			m_last_imu_time = now;
+			sub_dt = 1.0f / 180.0f; // nominal 180 Hz sub-sample rate
+		}
+		else
+		{
+			const float elapsed = std::chrono::duration<float>(now - m_last_imu_time).count();
+			sub_dt = std::min(elapsed, 0.1f) / 3.0f;
+			if (s == 0)
+				m_last_imu_time = now;
+		}
 
-		// Sub-frame deltaTime: divide the total elapsed time by 3 sub-samples
-		const float sub_dt = dt / 3.0f;
-
+		// Axis mapping for Right Joy-Con held in portrait (joystick at top):
+		//   gx_c = Joy-Con X → pitch  (tilt forward/back)
+		//   gz_c = Joy-Con Z → yaw    (rotate left/right)
+		//   gy_c = Joy-Con Y → roll   (tilt sideways)
 		std::lock_guard lock(m_motion_mutex);
 		m_motion_handler.processMotionSample(sub_dt,
-			raw_gx, raw_gz, raw_gy,   // gx=pitch, gy=yaw, gz=roll
-			ax, az, ay);               // accx, accy, accz
+			gx_c, gz_c, gy_c,   // gx=pitch, gy=yaw, gz=roll
+			ax,   az,   ay);    // accx, accy, accz
 		m_last_sample = m_motion_handler.getMotionSample();
 	}
 }

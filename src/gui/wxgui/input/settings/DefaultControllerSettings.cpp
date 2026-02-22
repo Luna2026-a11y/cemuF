@@ -14,6 +14,10 @@
 #include "wxgui/components/wxInputDraw.h"
 #include "wxgui/input/InputAPIAddWindow.h"
 
+#ifdef SUPPORTS_WIIMOTE
+#include "input/api/JoyCon/JoyConController.h"
+#endif
+
 #if BOOST_OS_WINDOWS
 #include <windows.h>
 #endif
@@ -105,6 +109,46 @@ DefaultControllerSettings::DefaultControllerSettings(wxWindow* parent, const wxP
 		box_sizer->Add(grid, 1, wxEXPAND, 0);
 		sizer->Add(box_sizer, 0, wxALL | wxEXPAND, 5);
 	}
+
+#ifdef SUPPORTS_WIIMOTE
+	// Joy-Con Gyro section (visible only when the physical controller is a Joy-Con)
+	if (m_controller->api() == InputAPI::JoyCon)
+	{
+		auto* box = new wxStaticBox(this, wxID_ANY, _("Joy-Con Gyro"));
+		auto* box_sizer = new wxStaticBoxSizer(box, wxVERTICAL);
+
+		// Info label
+		box_sizer->Add(
+			new wxStaticText(box, wxID_ANY,
+				_("Hold the Joy-Con still, then click Recalibrate.\n"
+				  "This zeros the gyro drift and resets the orientation.")),
+			0, wxALL, 5);
+
+		// Recalibrate button + status label side by side
+		auto* row = new wxBoxSizer(wxHORIZONTAL);
+
+		auto* btn = new wxButton(box, wxID_ANY, _("Recalibrate Gyro"));
+		m_joycon_calib_status = new wxStaticText(box, wxID_ANY, _("Ready"));
+
+		btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+#ifdef SUPPORTS_WIIMOTE
+			auto joycon = std::dynamic_pointer_cast<JoyConController>(m_controller);
+			if (joycon)
+			{
+				joycon->request_recalibration();
+				if (m_joycon_calib_status)
+					m_joycon_calib_status->SetLabel(_("Calibrating (~1 sec)..."));
+			}
+#endif
+		});
+
+		row->Add(btn,                   0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+		row->Add(m_joycon_calib_status, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+		box_sizer->Add(row, 0, wxEXPAND);
+
+		sizer->Add(box_sizer, 0, wxALL | wxEXPAND, 5);
+	}
+#endif
 
 	auto* row_sizer = new wxBoxSizer(wxHORIZONTAL);
 	// Axis
