@@ -2,6 +2,8 @@
 
 #include "input/api/Mouse/MouseControllerProvider.h"
 #include "input/api/Controller.h"
+#include "input/motion/MotionHandler.h"
+#include "input/motion/MotionSample.h"
 
 #include <atomic>
 #include <chrono>
@@ -39,6 +41,31 @@ public:
 
 	static MouseSettings& get_mouse_settings() { return s_mouse_settings; }
 	static void set_mouse_settings(const MouseSettings& settings) { s_mouse_settings = settings; }
+
+	// Gyro mode: how the mouse gyro simulation is activated
+	enum class GyroMode : int
+	{
+		Always = 0, // Active whenever mouse capture is active
+		Toggle = 1, // A key press toggles gyro on/off
+		Hold   = 2, // Gyro active only while a key is held
+	};
+
+	struct GyroSettings
+	{
+		GyroMode mode        = GyroMode::Always;
+		uint32   key         = 0;    // Key used for Toggle/Hold (0 = none)
+		float    sensitivity = 1.0f; // Gyro sensitivity multiplier (independent from mouse sensitivity)
+	};
+
+	static GyroSettings& get_gyro_settings() { return s_gyro_settings; }
+	static void set_gyro_settings(const GyroSettings& settings) { s_gyro_settings = settings; }
+
+	// Returns true if gyro simulation should be active this frame (handles all 3 modes)
+	static bool is_gyro_active();
+
+	// Returns the current MotionSample built from accumulated mouse deltas
+	// Must be called once per frame from the emulation thread
+	static MotionSample get_gyro_sample();
 
 	// Toggle mouse capture (when true, mouse is captured and controls right stick)
 	static bool is_capture_active() { return s_capture_active; }
@@ -85,6 +112,15 @@ private:
 	static std::atomic<bool> s_right_button;
 	static uint32 s_toggle_key; // Key that toggles mouse capture
 	static std::atomic<float> s_wheel_axis; // Decaying wheel value for left stick
+
+	// Gyro state (all accessed only from emulation thread except the deltas)
+	static GyroSettings s_gyro_settings;
+	static std::atomic<bool> s_gyro_enabled;       // Current on/off state for Toggle mode
+	static bool s_gyro_prev_key_down;              // Previous key state for Toggle edge detection
+	static std::atomic<float> s_gyro_delta_x;      // Accumulated mouse X delta for gyro (separate from stick)
+	static std::atomic<float> s_gyro_delta_y;      // Accumulated mouse Y delta for gyro
+	static WiiUMotionHandler s_motion_handler;     // Mahony-based sensor fusion (emulation thread only)
+	static std::chrono::high_resolution_clock::time_point s_last_gyro_time; // For deltaTime calculation
 
 	std::mutex m_delta_mutex;
 	float m_current_dx = 0.0f;

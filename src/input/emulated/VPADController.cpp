@@ -285,76 +285,36 @@ void VPADController::update_motion(VPADStatus_t& status)
 		return;
 	}
 
-	bool pad_view;
-	auto& input_manager = InputManager::instance();
-	if (const auto right_mouse = input_manager.get_right_down_mouse_info(&pad_view))
+	// Gyro simulation via mouse deltas (delta-based, proper Mahony filter)
+	if (MouseController::is_gyro_active())
 	{
-		const Vector2<float> mousePos(right_mouse->x, right_mouse->y);
+		auto motionSample = MouseController::get_gyro_sample();
 
-		int w, h;
-		if (pad_view)
-			WindowSystem::GetPadWindowPhysSize(w, h);
-		else
-			WindowSystem::GetWindowPhysSize(w, h);
+		glm::vec3 acc;
+		motionSample.getVPADAccelerometer(&acc[0]);
+		status.acc.x = acc.x;
+		status.acc.y = acc.y;
+		status.acc.z = acc.z;
+		status.accMagnitude     = motionSample.getVPADAccMagnitude();
+		status.accAcceleration  = motionSample.getVPADAccAcceleration();
 
-		float wx = mousePos.x / w;
-		float wy = mousePos.y / h;
+		glm::vec3 gyroChange;
+		motionSample.getVPADGyroChange(&gyroChange[0]);
+		status.gyroChange.x = gyroChange.x;
+		status.gyroChange.y = gyroChange.y;
+		status.gyroChange.z = gyroChange.z;
 
-		static glm::vec3 m_lastGyroRotation{}, m_startGyroRotation{};
-		static bool m_startGyroRotationSet{};
+		glm::vec3 gyroOrientation;
+		motionSample.getVPADOrientation(&gyroOrientation[0]);
+		status.gyroOrientation.x = gyroOrientation.x;
+		status.gyroOrientation.y = gyroOrientation.y;
+		status.gyroOrientation.z = gyroOrientation.z;
 
-		float rotX = (wy * 2 - 1.0f) * 135.0f; // up/down best
-		float rotY = (wx * 2 - 1.0f) * -180.0f; // left/right
-		float rotZ = input_manager.m_mouse_wheel * 14.0f + m_lastGyroRotation.z;
-		input_manager.m_mouse_wheel = 0.0f;
-
-		if (!m_startGyroRotationSet)
-		{
-			m_startGyroRotation = {rotX, rotY, rotZ};
-			m_startGyroRotationSet = true;
-		}
-
-		/*	debug_printf("\n\ngyro:\n<%.02f, %.02f, %.02f>\n\n",
-				rotX, rotY, rotZ);*/
-
-		Quaternion<float> q(rotX, rotY, rotZ);
-		auto rot = q.GetTransposedRotationMatrix();
-
-		/*m_forward = std::get<0>(rot);
-		m_right = std::get<1>(rot);
-		m_up = std::get<2>(rot);*/
-
-		status.dir.x = std::get<0>(rot);
-		status.dir.y = std::get<1>(rot);
-		status.dir.z = std::get<2>(rot);
-
-		/*debug_printf("rot:\n<%.02f, %.02f, %.02f>\n<%.02f, %.02f, %.02f>\n<%.02f, %.02f, %.02f>\n\n",
-			(float)status.dir.x.x, (float)status.dir.x.y, (float)status.dir.x.z,
-			(float)status.dir.y.x, (float)status.dir.y.y, (float)status.dir.y.z,
-			(float)status.dir.z.x, (float)status.dir.z.y, (float)status.dir.z.z);*/
-
-		glm::vec3 rotation(rotX - m_lastGyroRotation.x, (rotY - m_lastGyroRotation.y) * 15.0f,
-		                   rotZ - m_lastGyroRotation.z);
-
-		rotation.x = std::min(1.0f, std::max(-1.0f, rotation.x / 360.0f));
-		rotation.y = std::min(1.0f, std::max(-1.0f, rotation.y / 360.0f));
-		rotation.z = std::min(1.0f, std::max(-1.0f, rotation.z / 360.0f));
-
-		/*debug_printf("\n\ngyro:\n<%.02f, %.02f, %.02f>\n\n",
-			rotation.x, rotation.y, rotation.z);*/
-
-		constexpr float pi2 = (float)(M_PI * 2);
-		status.gyroChange = {rotation.x, rotation.y, rotation.z};
-		status.gyroOrientation = {rotation.x, rotation.y, rotation.z};
-		//status.angle = { rotation.x / pi2, rotation.y / pi2, rotation.z / pi2 };
-
-		status.acc = {rotation.x, rotation.y, rotation.z};
-		status.accAcceleration = 1.0f;
-		status.accMagnitude = 1.0f;
-
-		status.accXY = {1.0f, 0.0f};
-
-		m_lastGyroRotation = {rotX, rotY, rotZ};
+		float attitude[9];
+		motionSample.getVPADAttitudeMatrix(attitude);
+		status.dir.x.x = attitude[0]; status.dir.x.y = attitude[1]; status.dir.x.z = attitude[2];
+		status.dir.y.x = attitude[3]; status.dir.y.y = attitude[4]; status.dir.y.z = attitude[5];
+		status.dir.z.x = attitude[6]; status.dir.z.y = attitude[7]; status.dir.z.z = attitude[8];
 	}
 }
 
@@ -648,17 +608,6 @@ bool VPADController::set_default_mapping(const std::shared_ptr<ControllerBase>& 
 				{kButtonId_StickR_Right, kRotationXP},
 			};
 		}
-		break;
-	}
-	case InputAPI::Mouse:
-	{
-		mapping =
-		{
-			{kButtonId_StickR_Up, kRotationYP},
-			{kButtonId_StickR_Down, kRotationYN},
-			{kButtonId_StickR_Left, kRotationXN},
-			{kButtonId_StickR_Right, kRotationXP},
-		};
 		break;
 	}
 	case InputAPI::XInput:

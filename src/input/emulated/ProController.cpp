@@ -230,17 +230,6 @@ bool ProController::set_default_mapping(const std::shared_ptr<ControllerBase>& c
 		}
 		break;
 	}
-	case InputAPI::Mouse:
-	{
-		mapping =
-		{
-			{kButtonId_StickR_Up, kRotationYP},
-			{kButtonId_StickR_Down, kRotationYN},
-			{kButtonId_StickR_Left, kRotationXN},
-			{kButtonId_StickR_Right, kRotationXP},
-		};
-		break;
-	}
 	case InputAPI::XInput:
 	{
 		mapping =

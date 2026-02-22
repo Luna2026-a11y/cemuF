@@ -1,8 +1,9 @@
 #include "input/api/Mouse/MouseController.h"
 #include "WindowSystem.h"
 #include <cmath>
+#include <numbers>
 
-// Static members
+// Static members — mouse camera
 std::atomic<float> MouseController::s_delta_x{0.0f};
 std::atomic<float> MouseController::s_delta_y{0.0f};
 std::atomic<float> MouseController::s_wheel_delta{0.0f};
@@ -12,6 +13,15 @@ std::atomic<bool> MouseController::s_left_button{false};
 std::atomic<bool> MouseController::s_right_button{false};
 uint32 MouseController::s_toggle_key = 0;
 std::atomic<float> MouseController::s_wheel_axis{0.0f};
+
+// Static members — gyro simulation
+MouseController::GyroSettings MouseController::s_gyro_settings{};
+std::atomic<bool> MouseController::s_gyro_enabled{false};
+bool MouseController::s_gyro_prev_key_down = false;
+std::atomic<float> MouseController::s_gyro_delta_x{0.0f};
+std::atomic<float> MouseController::s_gyro_delta_y{0.0f};
+WiiUMotionHandler MouseController::s_motion_handler{};
+std::chrono::high_resolution_clock::time_point MouseController::s_last_gyro_time{};
 
 MouseController::MouseController()
 	: Controller("mouse-0", "Mouse")
@@ -30,8 +40,13 @@ void MouseController::on_mouse_move(int32_t deltaX, int32_t deltaY)
 	if (!s_capture_active.load())
 		return;
 
+	// Stick camera deltas (consumed by get_current_rotation)
 	MouseController::s_delta_x.fetch_add(static_cast<float>(deltaX));
 	MouseController::s_delta_y.fetch_add(static_cast<float>(deltaY));
+
+	// Gyro deltas (consumed independently by get_gyro_sample)
+	MouseController::s_gyro_delta_x.fetch_add(static_cast<float>(deltaX));
+	MouseController::s_gyro_delta_y.fetch_add(static_cast<float>(deltaY));
 }
 
 void MouseController::on_mouse_wheel(float delta)
@@ -122,6 +137,76 @@ float MouseController::get_wheel_axis()
 		s_wheel_axis.store(0.0f);
 
 	return std::max(-1.0f, std::min(1.0f, val));
+}
+
+bool MouseController::is_gyro_active()
+{
+	if (!s_capture_active.load())
+		return false;
+
+	const auto& gs = s_gyro_settings;
+
+	switch (gs.mode)
+	{
+	case GyroMode::Always:
+		return true;
+
+	case GyroMode::Toggle:
+		if (gs.key != 0)
+		{
+			const bool pressed = WindowSystem::IsKeyDown(gs.key);
+			const bool prev    = s_gyro_prev_key_down;
+			s_gyro_prev_key_down = pressed;
+			if (pressed && !prev) // rising edge → toggle
+				s_gyro_enabled = !s_gyro_enabled.load();
+		}
+		return s_gyro_enabled.load();
+
+	case GyroMode::Hold:
+		if (gs.key != 0)
+			return WindowSystem::IsKeyDown(gs.key);
+		return false;
+	}
+	return false;
+}
+
+MotionSample MouseController::get_gyro_sample()
+{
+	// --- Delta time ---
+	const auto now = std::chrono::high_resolution_clock::now();
+	float deltaTime;
+	if (s_last_gyro_time == std::chrono::high_resolution_clock::time_point{})
+		deltaTime = 1.0f / 60.0f; // premier appel : on suppose 60fps
+	else
+		deltaTime = std::chrono::duration<float>(now - s_last_gyro_time).count();
+	s_last_gyro_time = now;
+
+	// Sécurité : clamp entre 1ms et 100ms pour éviter les sauts
+	deltaTime = std::max(0.001f, std::min(deltaTime, 0.1f));
+
+	// --- Consommer les deltas gyro (séparés des deltas stick) ---
+	const float dx = s_gyro_delta_x.exchange(0.0f);
+	const float dy = s_gyro_delta_y.exchange(0.0f);
+
+	// --- Convertir pixels → vitesse angulaire (rad/s) ---
+	// Formule : angular_velocity = (delta_pixels / deltaTime) * radians_per_pixel
+	// radians_per_pixel = sensitivity * base_scale
+	// base_scale ≈ 0.001 rad/px : déplacer la souris sur tout l'écran (1920px) ≈ 110°
+	const float scale = s_gyro_settings.sensitivity * 0.001f;
+	const float gx = dy * scale / deltaTime; // pitch : souris haut/bas  → rotation X
+	const float gy = dx * scale / deltaTime; // yaw   : souris gauche/dr → rotation Y
+	constexpr float gz = 0.0f;              // roll  : pas de roulis avec la souris
+
+	// --- Vecteur gravité de référence ---
+	// Représente la GamePad tenue à plat (écran vers le haut).
+	// Le filtre Mahony utilise ça comme point d'ancrage pour corriger la dérive.
+	constexpr float accx = 0.0f;
+	constexpr float accy = 0.0f;
+	constexpr float accz = 1.0f; // 1g vers le bas dans l'axe Z
+
+	// --- Intégrer dans le filtre Mahony ---
+	s_motion_handler.processMotionSample(deltaTime, gx, gy, gz, accx, accy, accz);
+	return s_motion_handler.getMotionSample();
 }
 
 ControllerState MouseController::raw_state()
