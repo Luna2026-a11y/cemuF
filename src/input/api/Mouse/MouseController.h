@@ -62,6 +62,10 @@ public:
 	// Returns {x, y} in [-1, 1] range for direct injection into get_rotation()
 	static glm::vec2 get_current_rotation();
 
+	// Get mouse wheel as forward/backward movement for left stick Y
+	// Returns value in [-1, 1] that decays over time
+	static float get_wheel_axis();
+
 protected:
 	ControllerState raw_state() override;
 
@@ -80,6 +84,7 @@ private:
 	static std::atomic<bool> s_left_button;
 	static std::atomic<bool> s_right_button;
 	static uint32 s_toggle_key; // Key that toggles mouse capture
+	static std::atomic<float> s_wheel_axis; // Decaying wheel value for left stick
 
 	std::mutex m_delta_mutex;
 	float m_current_dx = 0.0f;

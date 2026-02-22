@@ -488,6 +488,10 @@ glm::vec2 VPADController::get_axis() const
 	glm::vec2 result;
 	result.x = (left > right) ? -left : right;
 	result.y = (up > down) ? up : -down;
+
+	// Mouse wheel: scroll forward = advance (Y+), scroll back = retreat (Y-)
+	result.y += MouseController::get_wheel_axis();
+
 	return length(result) > 1.0f ? normalize(result) : result;
 }
 

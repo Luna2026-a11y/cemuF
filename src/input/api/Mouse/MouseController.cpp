@@ -11,6 +11,7 @@ std::atomic<bool> MouseController::s_capture_active{false};
 std::atomic<bool> MouseController::s_left_button{false};
 std::atomic<bool> MouseController::s_right_button{false};
 uint32 MouseController::s_toggle_key = 0;
+std::atomic<float> MouseController::s_wheel_axis{0.0f};
 
 MouseController::MouseController()
 	: Controller("mouse-0", "Mouse")
@@ -39,6 +40,11 @@ void MouseController::on_mouse_wheel(float delta)
 		return;
 
 	MouseController::s_wheel_delta.fetch_add(delta);
+
+	// Add impulse to wheel axis (clamped to [-1, 1])
+	float current = s_wheel_axis.load();
+	float target = std::max(-1.0f, std::min(1.0f, current + delta * 0.5f));
+	s_wheel_axis.store(target);
 }
 
 void MouseController::update_mouse_delta()
@@ -100,6 +106,22 @@ glm::vec2 MouseController::get_current_rotation()
 	ry = std::max(-1.0f, std::min(1.0f, ry));
 
 	return {rx, ry};
+}
+
+float MouseController::get_wheel_axis()
+{
+	if (!s_capture_active.load())
+		return 0.0f;
+
+	float val = s_wheel_axis.load();
+
+	// Decay toward zero (smooth release)
+	if (std::abs(val) > 0.01f)
+		s_wheel_axis.store(val * 0.85f); // decay ~15% per frame
+	else
+		s_wheel_axis.store(0.0f);
+
+	return std::max(-1.0f, std::min(1.0f, val));
 }
 
 ControllerState MouseController::raw_state()

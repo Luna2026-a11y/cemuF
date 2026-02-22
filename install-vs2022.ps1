@@ -1,4 +1,4 @@
-# Visual Studio 2022 - Silent Install Script for Cemu
+﻿# Visual Studio 2022 - Silent Install Script for Cemu
 # Run as Administrator
 
 $ErrorActionPreference = "Stop"
