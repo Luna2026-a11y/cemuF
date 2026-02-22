@@ -249,13 +249,18 @@ void JoyConController::parse_imu(const uint8_t* report, size_t len)
 		//    Gyro: identity mapping so physical yaw→game yaw, pitch→pitch, roll→roll.
 		//    Accel: swap Joy-Con Y↔Z so that the vertical axis (raw_ay ≈ ±1 G when
 		//    held upright) ends up in Mahony's Z slot, where the filter expects gravity.
-		const float mg_x = -gx_c;  // Joy-Con X rotation  → pitch (negated: hardware axis inverted)
-		const float mg_y = -gy_c;  // Joy-Con Y rotation  → yaw  (negated: hardware axis inverted)
-		const float mg_z = -gz_c;  // Joy-Con Z rotation  → roll (negated: hardware axis inverted)
+		// Validated axis mapping (Right Joy-Con held portrait, joystick at top):
+		//   Joy-Con X (gx) → pitch  (tilt top toward/away)
+		//   Joy-Con Z (gz) → yaw   (rotate around vertical axis)
+		//   Joy-Con Y (gy) → roll  (remaining axis)
+		// Accel: Joy-Con Z is the vertical axis when held portrait → gravity on raw_az
+		const float mg_x = gx_c;
+		const float mg_y = gz_c;
+		const float mg_z = gy_c;
 
 		const float ma_x = raw_ax;
-		const float ma_y = raw_az; // Joy-Con Z accel → Mahony Y
-		const float ma_z = raw_ay; // Joy-Con Y accel → Mahony Z (gravity slot)
+		const float ma_y = raw_ay;
+		const float ma_z = -raw_az; // negated: Joy-Con Z points down → flip for Mahony (+Z = up)
 
 		// 3. Feed into Mahony filter (sub_dt already computed above)
 		{
