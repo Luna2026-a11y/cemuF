@@ -172,41 +172,51 @@ bool MouseController::is_gyro_active()
 
 MotionSample MouseController::get_gyro_sample()
 {
-	// --- Delta time ---
-	const auto now = std::chrono::high_resolution_clock::now();
-	float deltaTime;
-	if (s_last_gyro_time == std::chrono::high_resolution_clock::time_point{})
-		deltaTime = 1.0f / 60.0f; // premier appel : on suppose 60fps
-	else
-		deltaTime = std::chrono::duration<float>(now - s_last_gyro_time).count();
-	s_last_gyro_time = now;
+	// Rate-limit : on ne recalcule le filtre Mahony qu'à 120hz max.
+	// VPADRead peut être appelé des centaines de fois par seconde selon le jeu ;
+	// sans ce garde-fou, le filtre quaternion tournerait en boucle et tuerait le CPU.
+	static MotionSample s_cached_sample{};
+	constexpr float kMinDeltaTime = 1.0f / 120.0f; // 120hz max
 
-	// Sécurité : clamp entre 1ms et 100ms pour éviter les sauts
-	deltaTime = std::max(0.001f, std::min(deltaTime, 0.1f));
+	const auto now = std::chrono::high_resolution_clock::now();
+
+	// Premier appel : initialiser l'horloge et retourner un sample vide
+	if (s_last_gyro_time == std::chrono::high_resolution_clock::time_point{})
+	{
+		s_last_gyro_time = now;
+		return s_cached_sample;
+	}
+
+	const float elapsed = std::chrono::duration<float>(now - s_last_gyro_time).count();
+
+	// Pas encore le moment : on rend le dernier sample calculé
+	if (elapsed < kMinDeltaTime)
+		return s_cached_sample;
+
+	// Clamp à 100ms pour éviter les grands sauts après une pause
+	const float deltaTime = std::min(elapsed, 0.1f);
+	s_last_gyro_time = now;
 
 	// --- Consommer les deltas gyro (séparés des deltas stick) ---
 	const float dx = s_gyro_delta_x.exchange(0.0f);
 	const float dy = s_gyro_delta_y.exchange(0.0f);
 
 	// --- Convertir pixels → vitesse angulaire (rad/s) ---
-	// Formule : angular_velocity = (delta_pixels / deltaTime) * radians_per_pixel
-	// radians_per_pixel = sensitivity * base_scale
-	// base_scale ≈ 0.001 rad/px : déplacer la souris sur tout l'écran (1920px) ≈ 110°
+	// base_scale ≈ 0.001 rad/px : traverser 1920px ≈ 110°
 	const float scale = s_gyro_settings.sensitivity * 0.001f;
-	const float gx = dy * scale / deltaTime; // pitch : souris haut/bas  → rotation X
-	const float gy = dx * scale / deltaTime; // yaw   : souris gauche/dr → rotation Y
+	const float gx = dy * scale / deltaTime; // pitch : souris haut/bas
+	const float gy = dx * scale / deltaTime; // yaw   : souris gauche/droite
 	constexpr float gz = 0.0f;              // roll  : pas de roulis avec la souris
 
-	// --- Vecteur gravité de référence ---
-	// Représente la GamePad tenue à plat (écran vers le haut).
-	// Le filtre Mahony utilise ça comme point d'ancrage pour corriger la dérive.
+	// --- Vecteur gravité de référence (GamePad à plat, écran vers le haut) ---
 	constexpr float accx = 0.0f;
 	constexpr float accy = 0.0f;
-	constexpr float accz = 1.0f; // 1g vers le bas dans l'axe Z
+	constexpr float accz = 1.0f;
 
-	// --- Intégrer dans le filtre Mahony ---
+	// --- Intégrer dans le filtre Mahony et mettre en cache ---
 	s_motion_handler.processMotionSample(deltaTime, gx, gy, gz, accx, accy, accz);
-	return s_motion_handler.getMotionSample();
+	s_cached_sample = s_motion_handler.getMotionSample();
+	return s_cached_sample;
 }
 
 ControllerState MouseController::raw_state()
