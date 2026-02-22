@@ -956,6 +956,9 @@ void InputSettings2::on_controller_settings(wxCommandEvent& event)
 	case InputAPI::SDLController:
 	case InputAPI::DSUClient:
 	case InputAPI::Mouse:
+#ifdef SUPPORTS_WIIMOTE
+	case InputAPI::JoyCon:
+#endif
 	{
 		DefaultControllerSettings wnd(this, wxGetMousePosition() + wxSize(5, 5), controller);
 		wnd.ShowModal();

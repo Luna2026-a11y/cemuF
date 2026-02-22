@@ -11,6 +11,10 @@ JoyConController::JoyConController(std::string path, Side side)
 	, m_path(path)
 	, m_side(side)
 {
+	// Gyro-only controller: always enable motion so the user doesn't have
+	// to manually tick "Use motion" in settings.
+	m_settings.motion = true;
+
 	if (open_device())
 	{
 		m_thread_running.store(true);
@@ -88,6 +92,8 @@ void JoyConController::read_thread_func()
 {
 	constexpr int kBufSize = 64;
 	uint8_t buf[kBufSize];
+	bool logged_first = false;
+	int report_count = 0;
 
 	while (m_thread_running.load())
 	{
@@ -100,7 +106,7 @@ void JoyConController::read_thread_func()
 		int res = hid_read_timeout(m_handle, buf, kBufSize, 100 /*ms*/);
 		if (res < 0)
 		{
-			// Device disconnected
+			cemuLog_log(LogType::Force, "JoyCon: HID read error, device disconnected");
 			m_connected.store(false);
 			std::this_thread::sleep_for(500ms);
 			continue;
@@ -108,7 +114,26 @@ void JoyConController::read_thread_func()
 		if (res == 0)
 			continue; // timeout, no data
 
-		// Standard full report = 0x30, must be at least 49 bytes
+		// Log first received report for diagnosis
+		if (!logged_first)
+		{
+			logged_first = true;
+			cemuLog_log(LogType::Force, "JoyCon: first report received: ID=0x{:02X} len={}", buf[0], res);
+		}
+
+		// If Joy-Con is still sending simple 0x3F reports (not in 0x30 mode yet),
+		// resend the mode-switch command.
+		if (buf[0] == 0x3F && report_count < 5)
+		{
+			cemuLog_log(LogType::Force, "JoyCon: received 0x3F report, resending mode switch to 0x30");
+			send_subcommand(0x40, {0x01}); // Enable IMU
+			std::this_thread::sleep_for(30ms);
+			send_subcommand(0x03, {0x30}); // Set report mode
+		}
+
+		++report_count;
+
+		// Standard full report with IMU = 0x30, 49 bytes
 		if (res >= 49 && buf[0] == 0x30)
 			parse_imu(buf, (size_t)res);
 	}
