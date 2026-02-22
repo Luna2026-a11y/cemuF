@@ -20,6 +20,10 @@
 #include "input/api/Mouse/MouseControllerProvider.h"
 #endif
 
+#ifdef SUPPORTS_WIIMOTE
+#include "input/api/JoyCon/JoyConControllerProvider.h"
+#endif
+
 #include "input/emulated/VPADController.h"
 #include "input/emulated/WPADController.h"
 

@@ -68,6 +68,12 @@ endif()
 if (SUPPORTS_WIIMOTE)
 	target_compile_definitions(CemuInput PUBLIC SUPPORTS_WIIMOTE)
 	target_sources(CemuInput PRIVATE
+			api/JoyCon/JoyConControllerProvider.h
+			api/JoyCon/JoyConControllerProvider.cpp
+			api/JoyCon/JoyConController.h
+			api/JoyCon/JoyConController.cpp
+	)
+	target_sources(CemuInput PRIVATE
 			api/Wiimote/WiimoteControllerProvider.h
 			api/Wiimote/WiimoteControllerProvider.cpp
 			api/Wiimote/WiimoteMessages.h

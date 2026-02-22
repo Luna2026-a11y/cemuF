@@ -47,6 +47,9 @@ InputManager::InputManager()
 #if HAS_WIIMOTE
 	create_provider<WiimoteControllerProvider>();
 #endif
+#ifdef SUPPORTS_WIIMOTE
+	create_provider<JoyConControllerProvider>();
+#endif
 
 	m_update_thread_shutdown.store(false);
 	m_update_thread = std::thread(&InputManager::update_thread, this);

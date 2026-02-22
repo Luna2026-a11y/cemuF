@@ -20,6 +20,11 @@
 #include "input/api/Wiimote/NativeWiimoteController.h"
 #endif
 
+#ifdef SUPPORTS_WIIMOTE
+#include "input/api/JoyCon/JoyConController.h"
+#include "input/api/JoyCon/JoyConControllerProvider.h"
+#endif
+
 ControllerPtr ControllerFactory::CreateController(InputAPI::Type api, std::string_view uuid,
                                                   std::string_view display_name)
 {
@@ -105,6 +110,16 @@ ControllerPtr ControllerFactory::CreateController(InputAPI::Type api, std::strin
 			return std::make_shared<NativeWiimoteController>(index);
 		}
 #endif
+#ifdef SUPPORTS_WIIMOTE
+	case InputAPI::JoyCon:
+		{
+			// uuid is the raw HID path; side is encoded in display_name
+			const auto side = (display_name.find("(L)") != std::string_view::npos)
+				? JoyConController::Side::Left
+				: JoyConController::Side::Right;
+			return std::make_shared<JoyConController>(std::string(uuid), side);
+		}
+#endif
 	default:
 		throw std::invalid_argument(fmt::format("unhandled controller api: {}", api));
 	}
@@ -175,6 +190,10 @@ ControllerProviderPtr ControllerFactory::CreateControllerProvider(InputAPI::Type
 #if HAS_WIIMOTE
 	case InputAPI::Wiimote:
 		return std::make_shared<WiimoteControllerProvider>();
+#endif
+#ifdef SUPPORTS_WIIMOTE
+	case InputAPI::JoyCon:
+		return std::make_shared<JoyConControllerProvider>();
 #endif
 	default:
 		cemu_assert_debug(false);
