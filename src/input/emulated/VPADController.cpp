@@ -467,9 +467,13 @@ glm::vec2 VPADController::get_rotation() const
 	result.x = (left > right) ? -left : right;
 	result.y = (up > down) ? up : -down;
 
-	// Inject mouse into right stick — but only when gyro is NOT active.
-	// In gyro mode the mouse feeds the gyroscope exclusively (no double movement).
-	if (!MouseController::is_gyro_on())
+	// Inject mouse into right stick.
+	// Exception: in Hold/Toggle mode while gyro is active, the mouse feeds the
+	// gyroscope exclusively so the camera stays still (no double movement).
+	// In Always mode both coexist (gyro is a constant bonus layer, like Splatoon).
+	const bool gyro_exclusive = MouseController::is_gyro_on()
+	    && MouseController::get_gyro_settings().mode != MouseController::GyroMode::Always;
+	if (!gyro_exclusive)
 	{
 		const auto mouse = MouseController::get_current_rotation();
 		result.x += mouse.x;

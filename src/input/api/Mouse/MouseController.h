@@ -52,9 +52,9 @@ public:
 
 	struct GyroSettings
 	{
-		GyroMode mode        = GyroMode::Always;
-		uint32   key         = 0;    // Key used for Toggle/Hold (0 = none)
-		float    sensitivity = 1.0f; // Gyro sensitivity multiplier (independent from mouse sensitivity)
+		GyroMode mode        = GyroMode::Hold; // Default: off until user binds a key
+		uint32   key         = 0;              // Key used for Toggle/Hold (0 = none)
+		float    sensitivity = 1.0f;           // Gyro sensitivity multiplier
 	};
 
 	static GyroSettings& get_gyro_settings() { return s_gyro_settings; }
